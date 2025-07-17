@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "AI Proxy Extension",
+  "version": "1.0.0",
+  "description": "Browser extension that bridges native server with web AI services",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://gemini.google.com/*",
+    "https://www.perplexity.ai/*",
+    "https://bard.google.com/*",
+    "http://localhost:3000/*",
+    "http://localhost:3001/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://gemini.google.com/*",
+        "https://www.perplexity.ai/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Proxy Extension"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://gemini.google.com/*", "https://www.perplexity.ai/*"]
+    }
+  ]
+}

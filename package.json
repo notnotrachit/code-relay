@@ -1,0 +1,27 @@
+{
+  "name": "ai-proxy-system",
+  "version": "1.0.0",
+  "description": "A system that exposes OpenAI-compatible endpoints and routes requests through browser extensions to web-based AI services",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "cd server && npm start",
+    "dev": "cd server && npm run dev",
+    "test": "node test_client.js",
+    "install-server": "cd server && npm install",
+    "setup": "npm run install-server"
+  },
+  "keywords": [
+    "ai",
+    "proxy",
+    "openai",
+    "gemini",
+    "perplexity",
+    "browser-extension"
+  ],
+  "author": "AI Proxy System",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/ai-proxy-system.git"
+  }
+}
