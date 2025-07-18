@@ -1,4 +1,4 @@
-// Fixed popup script for AI Proxy Extension
+// Updated popup script with diagnostic features
 
 document.addEventListener('DOMContentLoaded', function() {
     const statusElement = document.getElementById('status');
@@ -34,7 +34,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function checkStatus() {
         chrome.runtime.sendMessage({ type: 'GET_STATUS' }, (response) => {
             if (chrome.runtime.lastError) {
-                console.log('Error getting status:', chrome.runtime.lastError);
                 updateStatus(false);
                 return;
             }
@@ -54,23 +53,28 @@ document.addEventListener('DOMContentLoaded', function() {
         checkPageBtn.textContent = 'Checking...';
         
         try {
+            // Get current active tab
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             
-            let statusInfo = 'Current URL: ' + tab.url + '\n';
-            statusInfo += 'Title: ' + tab.title + '\n\n';
+            let statusInfo = `Current URL: ${tab.url}\n`;
+            statusInfo += `Title: ${tab.title}\n\n`;
             
             // Check if URL matches our patterns
             const supportedPatterns = [
-                'https://gemini.google.com',
-                'https://www.perplexity.ai',
-                'https://perplexity.ai'
+                'https://gemini.google.com/*',
+                'https://www.perplexity.ai/*',
+                'https://perplexity.ai/*'
             ];
             
-            const isSupported = supportedPatterns.some(pattern => tab.url.startsWith(pattern));
+            const isSupported = supportedPatterns.some(pattern => {
+                const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+                return regex.test(tab.url);
+            });
             
             if (isSupported) {
                 statusInfo += 'URL is supported\n';
                 
+                // Try to inject a test script
                 try {
                     const results = await chrome.scripting.executeScript({
                         target: { tabId: tab.id },
@@ -87,17 +91,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
                     
                     const result = results[0].result;
-                    statusInfo += 'Can execute scripts: YES\n';
-                    statusInfo += 'Content script loaded: ' + (result.hasAIServiceHandler ? 'YES' : 'NO') + '\n';
-                    statusInfo += 'Ask input found: ' + (result.hasAskInput ? 'YES' : 'NO') + '\n';
-                    statusInfo += 'Textbox found: ' + (result.hasTextbox ? 'YES' : 'NO') + '\n';
-                    statusInfo += 'Contenteditable found: ' + (result.hasContentEditable ? 'YES' : 'NO') + '\n';
-                    statusInfo += 'Markdown elements: ' + result.markdownElements + '\n';
+                    statusInfo += `Can execute scripts on page\n`;
+                    statusInfo += `Content script loaded: ${result.hasAIServiceHandler ? 'YES' : 'NO'}\n`;
+                    statusInfo += `Ask input found: ${result.hasAskInput ? 'YES' : 'NO'}\n`;
+                    statusInfo += `Textbox found: ${result.hasTextbox ? 'YES' : 'NO'}\n`;
+                    statusInfo += `Contenteditable found: ${result.hasContentEditable ? 'YES' : 'NO'}\n`;
+                    statusInfo += `Markdown elements: ${result.markdownElements}\n`;
                     
                     showResult(pageStatus, statusInfo, result.hasAIServiceHandler ? 'success' : 'error');
                     
                 } catch (scriptError) {
-                    statusInfo += 'Cannot execute scripts: ' + scriptError.message + '\n';
+                    statusInfo += `Cannot execute scripts: ${scriptError.message}\n`;
                     statusInfo += 'This usually means:\n';
                     statusInfo += '- Extension lacks permissions\n';
                     statusInfo += '- Page is not fully loaded\n';
@@ -107,17 +111,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 
             } else {
                 statusInfo += 'URL not supported\n';
-                statusInfo += 'Current URL: ' + tab.url + '\n';
                 statusInfo += 'Supported patterns:\n';
                 supportedPatterns.forEach(pattern => {
-                    statusInfo += '- ' + pattern + '/*\n';
-                    statusInfo += '  Matches: ' + (tab.url.startsWith(pattern) ? 'YES' : 'NO') + '\n';
+                    statusInfo += `- ${pattern}\n`;
                 });
                 showResult(pageStatus, statusInfo, 'error');
             }
             
         } catch (error) {
-            showResult(pageStatus, 'Error checking page: ' + error.message, 'error');
+            showResult(pageStatus, `Error checking page: ${error.message}`, 'error');
         } finally {
             checkPageBtn.disabled = false;
             checkPageBtn.textContent = 'Check Current Page';
@@ -132,112 +134,46 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             
-            // Try multiple injection methods
-            let injectionSuccess = false;
-            let errorMessage = '';
+            // Read the content script file and inject it
+            const response = await fetch(chrome.runtime.getURL('content.js'));
+            const contentScript = await response.text();
             
-            // Method 1: Direct file injection
-            try {
-                await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    files: ['content.js']
-                });
-                injectionSuccess = true;
-                showResult(scriptStatus, 'Method 1: File injection attempted...', 'info');
-            } catch (error1) {
-                errorMessage += 'Method 1 failed: ' + error1.message + '\n';
-                
-                // Method 2: Inline script injection
-                try {
-                    const contentScriptCode = `
-                        // Content script for AI Proxy Extension
-                        class AIServiceHandler {
-                            constructor() {
-                                this.isReady = false;
-                                this.currentService = this.detectService();
-                                this.setupMessageListener();
-                                this.waitForPageReady();
-                                console.log('AI Service Handler initialized via manual injection');
-                            }
-                            
-                            detectService() {
-                                const hostname = window.location.hostname;
-                                if (hostname.includes('perplexity.ai')) {
-                                    return 'perplexity';
-                                }
-                                return 'unknown';
-                            }
-                            
-                            setupMessageListener() {
-                                chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-                                    if (message.type === 'AI_REQUEST') {
-                                        console.log('Received AI request:', message);
-                                        sendResponse({ content: 'Manual injection test response' });
-                                        return true;
-                                    }
-                                });
-                            }
-                            
-                            async waitForPageReady() {
-                                this.isReady = true;
-                                console.log('Perplexity service ready via manual injection');
-                            }
-                        }
-                        
-                        // Initialize the handler
-                        if (!window.aiServiceHandler) {
-                            window.aiServiceHandler = new AIServiceHandler();
-                        }
-                        
-                        // Make AIServiceHandler available globally for detection
-                        window.AIServiceHandler = AIServiceHandler;
-                        
-                        console.log('Content script manually injected successfully');
-                    `;
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                func: (script) => {
+                    // Remove existing handler if any
+                    if (window.aiServiceHandler) {
+                        window.aiServiceHandler = null;
+                    }
                     
-                    await chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
-                        func: (code) => {
-                            eval(code);
-                            return 'Inline injection successful';
-                        },
-                        args: [contentScriptCode]
-                    });
+                    // Execute the content script
+                    eval(script);
                     
-                    injectionSuccess = true;
-                    showResult(scriptStatus, 'Method 2: Inline injection attempted...', 'info');
-                } catch (error2) {
-                    errorMessage += 'Method 2 failed: ' + error2.message + '\n';
-                }
-            }
+                    return 'Content script injected successfully';
+                },
+                args: [contentScript]
+            });
             
-            // Wait and check if injection worked
+            // Wait a moment then check if it worked
             setTimeout(async () => {
                 try {
                     const results = await chrome.scripting.executeScript({
                         target: { tabId: tab.id },
-                        func: () => {
-                            return {
-                                hasAIServiceHandler: typeof AIServiceHandler !== 'undefined',
-                                hasHandler: !!window.aiServiceHandler,
-                                consoleMessages: 'Check console for injection messages'
-                            };
-                        }
+                        func: () => typeof AIServiceHandler !== 'undefined'
                     });
                     
-                    const result = results[0].result;
-                    if (result.hasAIServiceHandler || result.hasHandler) {
-                        showResult(scriptStatus, 'Content script injected successfully!\nCheck browser console for confirmation messages.', 'success');
-                    } else {
-                        showResult(scriptStatus, 'Injection failed:\n' + errorMessage + '\nTry refreshing the page and reloading the extension.', 'error');
-                    }
+                    const isLoaded = results[0].result;
+                    showResult(scriptStatus, 
+                        isLoaded ? 'Content script injected successfully!' : 'Content script injection failed',
+                        isLoaded ? 'success' : 'error'
+                    );
                 } catch (error) {
-                    showResult(scriptStatus, 'Error checking injection: ' + error.message + '\n' + errorMessage, 'error');
+                    showResult(scriptStatus, `Error checking injection: ${error.message}`, 'error');
                 }
-            }, 1500);
+            }, 1000);
             
         } catch (error) {
-            showResult(scriptStatus, 'Injection failed: ' + error.message, 'error');
+            showResult(scriptStatus, `Injection failed: ${error.message}`, 'error');
         } finally {
             injectScriptBtn.disabled = false;
             injectScriptBtn.textContent = 'Inject Content Script';
@@ -274,20 +210,20 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             if (!response.ok) {
-                throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
             
             const data = await response.json();
             
             if (data.error) {
-                showTestResult('Error: ' + data.error.message, 'error');
+                showTestResult(`Error: ${data.error.message}`, 'error');
             } else {
-                const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || 'No response content';
-                showTestResult('Response: ' + content, 'success');
+                const content = data.choices?.[0]?.message?.content || 'No response content';
+                showTestResult(`Response: ${content}`, 'success');
             }
             
         } catch (error) {
-            showTestResult('Request failed: ' + error.message, 'error');
+            showTestResult(`Request failed: ${error.message}`, 'error');
         } finally {
             testBtn.disabled = false;
             testBtn.textContent = 'Send Test Request';
@@ -307,6 +243,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function showTestResult(message, type) {
         testResult.style.display = 'block';
         testResult.textContent = message;
+        
+        // Style based on type
         testResult.style.backgroundColor = type === 'error' ? '#ffeaea' : 
                                          type === 'success' ? '#e8f5e8' : '#f0f8ff';
         testResult.style.color = type === 'error' ? '#d32f2f' : 

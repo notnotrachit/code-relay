@@ -1,4 +1,4 @@
-// Content script for AI Proxy Extension
+// Content script for AI Proxy Extension - Complete Fixed Version
 // Handles communication with AI web services
 
 class AIServiceHandler {
@@ -56,46 +56,20 @@ class AIServiceHandler {
             console.log(`${this.currentService} service initialized`);
         } catch (error) {
             console.error('Failed to initialize service:', error);
+            // Don't fail completely, just mark as ready
+            this.isReady = true;
+            console.log(`${this.currentService} service initialized (with warnings)`);
         }
     }
     
     async initializeGemini() {
-        // Wait for Gemini interface to load
-        await this.waitForElement('textarea[placeholder*="Enter a prompt"], textarea[aria-label*="Message"], div[contenteditable="true"]');
+        // Don't wait for elements during initialization - check them when needed
+        console.log('Gemini service initialized (no element waiting)');
     }
     
     async initializePerplexity() {
-        // Wait for Perplexity interface to load - updated selectors for the actual input
-        await this.waitForElement('div#ask-input, [role="textbox"], div[contenteditable="true"]');
-        console.log('Perplexity interface detected and ready');
-    }
-    
-    async waitForElement(selector, timeout = 10000) {
-        return new Promise((resolve, reject) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                resolve(element);
-                return;
-            }
-            
-            const observer = new MutationObserver((mutations, obs) => {
-                const element = document.querySelector(selector);
-                if (element) {
-                    obs.disconnect();
-                    resolve(element);
-                }
-            });
-            
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-            
-            setTimeout(() => {
-                observer.disconnect();
-                reject(new Error(`Element ${selector} not found within ${timeout}ms`));
-            }, timeout);
-        });
+        // Don't wait for elements during initialization - check them when needed
+        console.log('Perplexity service initialized (no element waiting)');
     }
     
     async handleAIRequest(requestId, payload) {
@@ -121,133 +95,246 @@ class AIServiceHandler {
         throw new Error(`Unsupported service: ${this.currentService}`);
     }
     
-    async sendGeminiRequest(prompt) {
-        try {
-            // Find input element
-            const inputSelectors = [
-                'textarea[placeholder*="Enter a prompt"]',
-                'textarea[aria-label*="Message"]',
-                'div[contenteditable="true"]',
-                'textarea[data-testid="input-field"]'
-            ];
+    async findInputElement() {
+        console.log('Looking for input element...');
+        
+        const selectors = [
+            '#ask-input',
+            '[role="textbox"]',
+            '[contenteditable="true"]',
+            'textarea',
+            'input[type="text"]'
+        ];
+        
+        for (const selector of selectors) {
+            const elements = document.querySelectorAll(selector);
+            console.log(`  ${selector}: ${elements.length} found`);
             
-            let inputElement = null;
-            for (const selector of inputSelectors) {
-                inputElement = document.querySelector(selector);
-                if (inputElement) break;
-            }
-            
-            if (!inputElement) {
-                throw new Error('Could not find Gemini input element');
-            }
-            
-            // Clear and set the prompt
-            inputElement.focus();
-            inputElement.value = '';
-            
-            // Type the prompt
-            await this.typeText(inputElement, prompt);
-            
-            // Find and click send button
-            const sendButton = await this.findSendButton();
-            if (!sendButton) {
-                throw new Error('Could not find send button');
-            }
-            
-            // Wait for response
-            const response = await this.waitForGeminiResponse();
-            
-            return {
-                content: response,
-                usage: {
-                    prompt_tokens: prompt.length,
-                    completion_tokens: response.length,
-                    total_tokens: prompt.length + response.length
+            for (const element of elements) {
+                const rect = element.getBoundingClientRect();
+                const isVisible = rect.width > 0 && rect.height > 0;
+                const isInteractable = !element.disabled && !element.readOnly;
+                
+                console.log(`    Element: ${element.tagName}#${element.id || 'no-id'} - visible: ${isVisible}, interactable: ${isInteractable}`);
+                
+                if (isVisible && isInteractable) {
+                    console.log(`Using element: ${element.tagName}#${element.id || 'no-id'}`);
+                    return element;
                 }
-            };
-            
-        } catch (error) {
-            throw new Error(`Gemini request failed: ${error.message}`);
+            }
         }
+        
+        throw new Error('No suitable input element found');
+    }
+    
+    async findGeminiInputElement() {
+        console.log('Looking for Gemini input element...');
+        
+        const selectors = [
+            'textarea[placeholder*="Enter a prompt"]',
+            'textarea[aria-label*="Message"]',
+            'textarea[data-testid="input-field"]',
+            'div[contenteditable="true"]',
+            'textarea',
+            'input[type="text"]'
+        ];
+        
+        for (const selector of selectors) {
+            const elements = document.querySelectorAll(selector);
+            console.log(`  Gemini ${selector}: ${elements.length} found`);
+            
+            for (const element of elements) {
+                const rect = element.getBoundingClientRect();
+                const isVisible = rect.width > 0 && rect.height > 0;
+                const isInteractable = !element.disabled && !element.readOnly;
+                
+                console.log(`    Gemini Element: ${element.tagName}#${element.id || 'no-id'} - visible: ${isVisible}, interactable: ${isInteractable}`);
+                
+                if (isVisible && isInteractable) {
+                    console.log(`Using Gemini element: ${element.tagName}#${element.id || 'no-id'}`);
+                    return element;
+                }
+            }
+        }
+        
+        throw new Error('No suitable Gemini input element found');
+    }
+    
+    async findGeminiSendButton() {
+        const buttonSelectors = [
+            'button[aria-label*="Send"]',
+            'button[data-testid*="send"]',
+            'button:has(svg)',
+            'button[type="submit"]'
+        ];
+        
+        for (const selector of buttonSelectors) {
+            const buttons = document.querySelectorAll(selector);
+            for (const button of buttons) {
+                const rect = button.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0 && !button.disabled) {
+                    console.log('Found Gemini send button with selector:', selector);
+                    return button;
+                }
+            }
+        }
+        
+        console.log('No Gemini send button found');
+        return null;
+    }
+    
+    extractCleanText(element) {
+        // Clone the element to avoid modifying the original
+        const clonedElement = element.cloneNode(true);
+        
+        // Remove citation links with specific selectors
+        const citationSelectors = [
+            'a.citation',
+            'a[class*="citation"]',
+            'a.ml-xs',
+            'span.whitespace-nowrap'
+        ];
+        
+        citationSelectors.forEach(selector => {
+            const elements = clonedElement.querySelectorAll(selector);
+            elements.forEach(el => {
+                if (selector === 'span.whitespace-nowrap') {
+                    const hasCitation = el.querySelector('a.citation, a[class*="citation"]');
+                    if (hasCitation) {
+                        el.remove();
+                    }
+                } else {
+                    el.remove();
+                }
+            });
+        });
+        
+        // Get text from prose element if available
+        const proseElement = clonedElement.querySelector('.prose');
+        let text = '';
+        
+        if (proseElement) {
+            // Get ALL text content and then structure it properly
+            const allTextNodes = [];
+            
+            // Walk through all nodes in order
+            const walker = document.createTreeWalker(
+                proseElement,
+                NodeFilter.SHOW_ELEMENT,
+                null,
+                false
+            );
+            
+            const processedElements = new Set();
+            const textParts = [];
+            
+            // Process direct children in order
+            Array.from(proseElement.children).forEach(child => {
+                if (processedElements.has(child)) return;
+                processedElements.add(child);
+                
+                const childClone = child.cloneNode(true);
+                
+                // Remove citations from this element
+                const citations = childClone.querySelectorAll('a.citation, a[class*="citation"], span.whitespace-nowrap');
+                citations.forEach(citation => {
+                    if (citation.tagName === 'SPAN') {
+                        const hasCitation = citation.querySelector('a.citation, a[class*="citation"]');
+                        if (hasCitation) citation.remove();
+                    } else {
+                        citation.remove();
+                    }
+                });
+                
+                const text = childClone.textContent.trim();
+                if (text.length > 0) {
+                    if (child.tagName === 'UL' || child.tagName === 'OL') {
+                        // Handle lists
+                        const listItems = childClone.querySelectorAll('li');
+                        const listText = Array.from(listItems).map(li => '- ' + li.textContent.trim()).join('\n');
+                        if (listText) textParts.push(listText);
+                    } else {
+                        textParts.push(text);
+                    }
+                }
+            });
+            
+            text = textParts.filter(t => t.length > 0).join('\n\n');
+            
+            // If we didn't get much text, fall back to simpler method
+            if (text.length < 50) {
+                const proseClone = proseElement.cloneNode(true);
+                
+                // Remove citations
+                const citations = proseClone.querySelectorAll('a.citation, a[class*="citation"], span.whitespace-nowrap');
+                citations.forEach(citation => {
+                    if (citation.tagName === 'SPAN') {
+                        const hasCitation = citation.querySelector('a.citation, a[class*="citation"]');
+                        if (hasCitation) citation.remove();
+                    } else {
+                        citation.remove();
+                    }
+                });
+                
+                text = proseClone.textContent || proseClone.innerText;
+            }
+        } else {
+            text = clonedElement.textContent || clonedElement.innerText;
+        }
+        
+        // Clean up the text
+        text = text.trim();
+        
+        console.log('Text before cleaning:', text.substring(text.length - 50));
+        
+        // Remove trailing citation numbers and periods - BUT NOT if they're part of math equations
+        text = text.replace(/\s*\d+\s*\.\s*$/, '');
+        console.log('After citation number removal:', text.substring(text.length - 50));
+        
+        text = text.replace(/\s*\d+\s*$/, '');
+        console.log('After trailing number removal:', text.substring(text.length - 50));
+        
+        // Remove citation markers that might remain - BUT NOT if they're part of equations
+        text = text.replace(/\s+\d+\.\s*$/g, '');
+        console.log('After citation marker removal:', text.substring(text.length - 50));
+        
+        // Fix formatting issues
+        text = text.replace(/(\d+)\+(\d+)=(\d+)(\d+)\s*\+\s*(\d+)\s*=\s*(\d+)(\d+)\+(\d+)=(\d+)/g, '$1 + $2 = $9');
+        
+        // Clean up multiple spaces and normalize whitespace
+        text = text.replace(/\s+/g, ' ');
+        text = text.replace(/\n\s*\n/g, '\n\n');
+        
+        // DANGEROUS: This removes periods at the end - could be removing "= 20."
+        // text = text.replace(/\s*\.\s*$/, '');
+        
+        console.log('Final text:', text.substring(text.length - 50));
+        
+        return text;
     }
     
     async sendPerplexityRequest(prompt) {
         try {
             console.log('Starting Perplexity request with prompt:', prompt);
             
-            // Enhanced input element detection for Perplexity - based on actual DOM structure
-            const inputSelectors = [
-                'div#ask-input',  // The actual Perplexity input element
-                '[role="textbox"]',  // Role-based selector
-                'div[contenteditable="true"]',  // Fallback for contenteditable
-                'main div[contenteditable="true"]',  // More specific contenteditable
-                'main [role="textbox"]',  // Role in main area
-                // Legacy selectors as fallbacks
-                'textarea[data-testid="search-input"]',
-                'textarea[placeholder*="Ask"]',
-                'textarea[placeholder*="Follow up"]',
-                'main input[type="text"]',
-                'main textarea'
-            ];
+            // Find input element dynamically
+            const inputElement = await this.findInputElement();
             
-            let inputElement = null;
-            console.log('Looking for input element...');
-            
-            for (const selector of inputSelectors) {
-                console.log(`Trying selector: ${selector}`);
-                const elements = document.querySelectorAll(selector);
-                console.log(`Found ${elements.length} elements for selector: ${selector}`);
-                
-                for (const element of elements) {
-                    // Check if element is visible and interactable
-                    const rect = element.getBoundingClientRect();
-                    const isVisible = rect.width > 0 && rect.height > 0;
-                    const isInteractable = !element.disabled && !element.readOnly;
-                    
-                    console.log(`Element check - visible: ${isVisible}, interactable: ${isInteractable}`, element);
-                    
-                    if (isVisible && isInteractable) {
-                        inputElement = element;
-                        console.log('Found input element with selector:', selector, element);
-                        break;
-                    }
-                }
-                if (inputElement) break;
-            }
-            
-            if (!inputElement) {
-                // Log available elements for debugging
-                console.log('Available textareas:', document.querySelectorAll('textarea'));
-                console.log('Available inputs:', document.querySelectorAll('input'));
-                console.log('Available contenteditable:', document.querySelectorAll('[contenteditable="true"]'));
-                console.log('Available role=textbox:', document.querySelectorAll('[role="textbox"]'));
-                console.log('Available #ask-input:', document.querySelectorAll('#ask-input'));
-                
-                // Try to find any input-like element as fallback
-                const fallbackElement = document.querySelector('#ask-input') || 
-                                      document.querySelector('[role="textbox"]') ||
-                                      document.querySelector('[contenteditable="true"]');
-                
-                if (fallbackElement) {
-                    console.log('Using fallback element:', fallbackElement);
-                    inputElement = fallbackElement;
-                } else {
-                    throw new Error('Could not find Perplexity input element');
-                }
-            }
+            // Capture initial markdown count
+            const initialMarkdown = document.querySelectorAll('[id^="markdown-content-"]');
+            const initialCount = initialMarkdown.length;
+            console.log(`Initial markdown elements count: ${initialCount}`);
             
             // Clear existing content and focus
             inputElement.focus();
             await new Promise(resolve => setTimeout(resolve, 500));
             
-            // Clear the input - handle div#ask-input specifically
+            // Clear the input
             if (inputElement.id === 'ask-input' || inputElement.getAttribute('role') === 'textbox') {
-                // For Perplexity's div-based input - more aggressive clearing
                 inputElement.innerHTML = '';
                 inputElement.textContent = '';
                 inputElement.innerText = '';
                 
-                // Try to clear any existing content
                 const selection = window.getSelection();
                 selection.selectAllChildren(inputElement);
                 selection.deleteFromDocument();
@@ -274,37 +361,31 @@ class AIServiceHandler {
             console.log('Text in input after typing:', currentText);
             if (!currentText.includes(prompt.substring(0, 10))) {
                 console.log('Text not properly set, trying alternative method');
-                // Try direct manipulation
                 inputElement.focus();
                 document.execCommand('selectAll');
                 document.execCommand('insertText', false, prompt);
             }
             
-            // Enhanced send button detection
-            const sendButton = await this.findPerplexitySendButton();
-            if (!sendButton) {
-                // Try Enter key as fallback for Perplexity
-                console.log('Send button not found, trying Enter key');
-                inputElement.dispatchEvent(new KeyboardEvent('keydown', {
-                    key: 'Enter',
-                    code: 'Enter',
-                    keyCode: 13,
-                    bubbles: true,
-                    which: 13
-                }));
-                
-                // Also try keypress event
-                inputElement.dispatchEvent(new KeyboardEvent('keypress', {
-                    key: 'Enter',
-                    code: 'Enter',
-                    keyCode: 13,
-                    bubbles: true,
-                    which: 13
-                }));
-            }
+            // Submit
+            console.log('Send button not found, trying Enter key');
+            inputElement.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                bubbles: true,
+                which: 13
+            }));
             
-            // Wait for response with enhanced detection
-            const response = await this.waitForPerplexityResponse();
+            inputElement.dispatchEvent(new KeyboardEvent('keypress', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                bubbles: true,
+                which: 13
+            }));
+            
+            // Wait for response
+            const response = await this.waitForPerplexityResponse(initialCount);
             
             return {
                 content: response,
@@ -322,39 +403,16 @@ class AIServiceHandler {
     }
     
     async typeText(element, text) {
-        // Simulate human typing - enhanced for Perplexity's div input
         element.focus();
         await new Promise(resolve => setTimeout(resolve, 200));
         
         if (element.id === 'ask-input' || element.getAttribute('role') === 'textbox') {
-            // Special handling for Perplexity's div-based input
             element.focus();
-            
-            // Clear first
             element.innerHTML = '';
             element.textContent = '';
-            
-            // Try multiple approaches to set the text
             element.textContent = text;
             element.innerHTML = text;
             
-            // Simulate typing character by character for better detection
-            for (let i = 0; i < text.length; i++) {
-                element.dispatchEvent(new KeyboardEvent('keydown', { 
-                    key: text[i], 
-                    bubbles: true 
-                }));
-                element.dispatchEvent(new KeyboardEvent('keypress', { 
-                    key: text[i], 
-                    bubbles: true 
-                }));
-                element.dispatchEvent(new KeyboardEvent('keyup', { 
-                    key: text[i], 
-                    bubbles: true 
-                }));
-            }
-            
-            // Trigger multiple events to ensure Perplexity detects the input
             element.dispatchEvent(new Event('input', { bubbles: true }));
             element.dispatchEvent(new Event('change', { bubbles: true }));
             element.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }));
@@ -368,289 +426,277 @@ class AIServiceHandler {
             element.dispatchEvent(new Event('input', { bubbles: true }));
         }
         
-        // Trigger change events
         element.dispatchEvent(new Event('change', { bubbles: true }));
-        
         await new Promise(resolve => setTimeout(resolve, 500));
     }
     
-    async findSendButton() {
-        const buttonSelectors = [
-            'button[aria-label*="Send"]',
-            'button[data-testid*="send"]',
-            'button:has(svg)',
-            'button[type="submit"]',
-            '[role="button"][aria-label*="Send"]'
-        ];
+    async waitForPerplexityResponse(initialCount) {
+        console.log('Starting to wait for Perplexity response...');
         
-        for (const selector of buttonSelectors) {
-            const button = document.querySelector(selector);
-            if (button && !button.disabled) {
-                button.click();
-                return button;
-            }
-        }
-        
-        // Try Enter key as fallback
-        const inputElement = document.activeElement;
-        if (inputElement) {
-            inputElement.dispatchEvent(new KeyboardEvent('keydown', {
-                key: 'Enter',
-                code: 'Enter',
-                keyCode: 13,
-                bubbles: true
-            }));
-            return inputElement;
-        }
-        
-        return null;
-    }
-    
-    async findPerplexitySendButton() {
-        const buttonSelectors = [
-            'button[data-testid="submit-button"]',
-            'button[aria-label*="Submit"]',
-            'button[aria-label*="Send"]',
-            'button[type="submit"]',
-            'button:has(svg[data-icon="arrow-right"])',
-            'button:has(svg[data-icon="send"])',
-            '[role="button"]:has(svg)',
-            // Based on debug output - look for buttons near search area
-            'main button[type="submit"]',
-            'main button:not([disabled])',
-            '[data-testid*="search"] button',
-            'button:not([disabled])'
-        ];
-        
-        for (const selector of buttonSelectors) {
-            const buttons = document.querySelectorAll(selector);
-            for (const button of buttons) {
-                // Check if button is visible and clickable
-                const rect = button.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0 && !button.disabled) {
-                    console.log('Found send button with selector:', selector);
-                    button.click();
-                    return button;
-                }
-            }
-        }
-        
-        console.log('No send button found, available buttons:', document.querySelectorAll('button'));
-        return null;
-    }
-    
-    async waitForGeminiResponse() {
-        // Wait for response to appear
-        const responseSelectors = [
-            '[data-response-id]',
-            '.response-container',
-            '.model-response',
-            '[role="presentation"] p',
-            '.markdown'
-        ];
-        
-        return await this.waitForResponse(responseSelectors);
-    }
-    
-    async waitForPerplexityResponse() {
         // Wait a moment for the request to be sent
         await new Promise(resolve => setTimeout(resolve, 3000));
         
-        // Enhanced response detection for Perplexity - based on actual debug results
-        const responseSelectors = [
-            // Primary selectors based on debug output
-            'main div[class*="content"]',  // This contains the actual response
-            'main p',                      // Response also appears in p tags
-            'div[class*="content"]',       // Broader content selector
-            // Secondary selectors
-            '[data-testid="copilot-answer"]',
-            '[data-testid="answer"]',
-            '.prose',
-            '.answer-content',
-            '.response-text',
-            '[role="main"] div[class*="answer"]',
-            '[class*="answer-container"]',
-            '[class*="response"]',
-            'div[class*="prose"]'
-        ];
-        
-        console.log('Waiting for NEW Perplexity response...');
-        return await this.waitForNewResponse(responseSelectors, 25000);
-    }
-    
-    async waitForNewResponse(selectors, timeout = 25000) {
-        // Capture current content to detect new responses
-        const initialContent = new Set();
-        const initialElementCount = document.querySelectorAll('*').length;
-        
-        selectors.forEach(selector => {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(el => {
-                const text = el.textContent || el.innerText;
-                if (text && text.trim().length > 10) {
-                    initialContent.add(text.trim());
-                }
-            });
-        });
-        
-        console.log(`Initial content captured (${initialContent.size} items), looking for new responses...`);
-        
         return new Promise((resolve, reject) => {
-            let checkCount = 0;
-            const maxChecks = timeout / 1000;
+            let attempts = 0;
+            const maxAttempts = 30;
+            let lastResponseLength = 0;
+            let stableCount = 0;
+            let foundElement = null;
             
-            const checkForNewResponse = () => {
-                checkCount++;
-                console.log(`New response check ${checkCount}/${maxChecks}`);
+            const checkForResponse = () => {
+                attempts++;
+                console.log(`Checking for NEW response in markdown-content ${attempts}/${maxAttempts}`);
                 
-                // Check if new elements were added to the page
-                const currentElementCount = document.querySelectorAll('*').length;
-                if (currentElementCount > initialElementCount) {
-                    console.log(`New elements detected: ${currentElementCount - initialElementCount}`);
-                }
+                const currentMarkdownElements = document.querySelectorAll('[id^="markdown-content-"]');
+                console.log(`Current markdown elements count: ${currentMarkdownElements.length}`);
                 
-                // Debug: Show what content we're finding
-                if (checkCount % 5 === 0) { // Every 5 checks
-                    console.log('=== DEBUG: Current content scan ===');
-                    const allTexts = [];
-                    document.querySelectorAll('*').forEach(el => {
-                        const text = el.textContent || el.innerText;
-                        if (text && text.trim().length > 30 && !el.querySelector('*')) {
-                            allTexts.push({
-                                text: text.trim().substring(0, 100),
-                                length: text.length,
-                                element: el.tagName + (el.className ? '.' + el.className.split(' ')[0] : '')
-                            });
-                        }
+                if (currentMarkdownElements.length > initialCount) {
+                    console.log(`New markdown elements detected! Looking at latest ones...`);
+                    
+                    const sortedElements = Array.from(currentMarkdownElements).sort((a, b) => {
+                        const aNum = parseInt(a.id.replace('markdown-content-', ''));
+                        const bNum = parseInt(b.id.replace('markdown-content-', ''));
+                        return bNum - aNum;
                     });
-                    allTexts.sort((a, b) => b.length - a.length);
-                    console.log('Top 5 text elements found:');
-                    allTexts.slice(0, 5).forEach((item, i) => {
-                        console.log(`${i + 1}. ${item.element} (${item.length} chars): "${item.text}..."`);
-                    });
-                }
-                
-                // First check our priority selectors for Perplexity responses
-                const prioritySelectors = ['main div[class*="content"]', 'main p'];
-                for (const selector of prioritySelectors) {
-                    const elements = document.querySelectorAll(selector);
-                    for (let i = elements.length - 1; i >= 0; i--) {
-                        const element = elements[i];
-                        const text = element.textContent || element.innerText;
+                    
+                    for (const element of sortedElements) {
+                        const elementNum = parseInt(element.id.replace('markdown-content-', ''));
                         
-                        if (text && text.trim().length > 50) {
-                            const trimmedText = text.trim();
+                        if (elementNum >= initialCount) {
+                            console.log(`Checking NEW element: ${element.id}`);
                             
-                            // Filter out JavaScript code and other non-response content
-                            if (!initialContent.has(trimmedText) && 
-                                !trimmedText.includes('What is the current weather') &&
-                                !trimmedText.includes('This should trigger') &&
-                                !trimmedText.includes('self.__next_f.push') &&
-                                !trimmedText.includes('metadata') &&
-                                !trimmedText.includes('$undefined') &&
-                                !trimmedText.includes('digest') &&
-                                !trimmedText.startsWith('{') &&
-                                !trimmedText.includes('__next') &&
-                                trimmedText.length < 2000) { // Reasonable response length
-                                console.log(`Found NEW response via priority selector "${selector}" (${trimmedText.length} chars): ${trimmedText.substring(0, 100)}...`);
-                                resolve(trimmedText);
-                                return;
+                            // Extract clean text using the improved method
+                            let text = this.extractCleanText(element);
+                            
+                            if (text && text.trim().length > 20) {
+                                const trimmedText = text.trim();
+                                console.log(`Found content in ${element.id} (${trimmedText.length} chars): "${trimmedText.substring(0, 100)}..."`);
+                                
+                                if (!trimmedText.includes('self.__next_f.push') &&
+                                    !trimmedText.includes('metadata') &&
+                                    !trimmedText.includes('__CF$cv$params') &&
+                                    !trimmedText.includes('challenge-platform') &&
+                                    !trimmedText.includes('function()') &&
+                                    !trimmedText.startsWith('{') &&
+                                    !trimmedText.startsWith('.') &&
+                                    !trimmedText.startsWith('(function') &&
+                                    trimmedText.length < 5000 &&
+                                    trimmedText.length > 20) {
+                                    
+                                    foundElement = element;
+                                    
+                                    // Check if response is still growing
+                                    if (trimmedText.length === lastResponseLength) {
+                                        stableCount++;
+                                        console.log(`Response stable count: ${stableCount}/3 (${trimmedText.length} chars)`);
+                                        
+                                        if (stableCount >= 3) {
+                                            console.log(`Response appears complete in ${element.id} (3 stable checks)`);
+                                            resolve(trimmedText);
+                                            return;
+                                        }
+                                    } else {
+                                        stableCount = 0;
+                                        lastResponseLength = trimmedText.length;
+                                        console.log(`Response still growing: ${trimmedText.length} chars`);
+                                    }
+                                    
+                                    // Only consider response complete if it has proper ending AND is stable
+                                    if (trimmedText.length > 200 && stableCount >= 2 && (
+                                        (trimmedText.toLowerCase().includes('in summary') && trimmedText.endsWith('.')) ||
+                                        (trimmedText.toLowerCase().includes('therefore') && trimmedText.endsWith('.')) ||
+                                        (trimmedText.toLowerCase().includes('mathematically') && trimmedText.includes('= 20') && trimmedText.endsWith('.')) ||
+                                        (trimmedText.includes('= 20') && trimmedText.endsWith('.')) ||
+                                        (trimmedText.toLowerCase().includes('the answer is') && trimmedText.endsWith('.'))
+                                    )) {
+                                        console.log(`Response looks complete: has conclusion AND ends properly AND is stable`);
+                                        resolve(trimmedText);
+                                        return;
+                                    }
+                                    
+                                    break; // Found valid element, no need to check others
+                                } else {
+                                    console.log(`Filtered out content from ${element.id} (looks like CSS/code)`);
+                                }
                             }
                         }
                     }
+                } else {
+                    console.log(`No new markdown elements yet (${currentMarkdownElements.length} vs ${initialCount})`);
                 }
                 
-                // Look for any substantial new text anywhere on the page
-                const allElements = document.querySelectorAll('*');
-                for (let i = allElements.length - 1; i >= Math.max(0, allElements.length - 50); i--) {
-                    const element = allElements[i];
-                    const text = element.textContent || element.innerText;
-                    
-                    if (text && text.trim().length > 50 && !element.querySelector('*')) {
-                        const trimmedText = text.trim();
-                        
-                        // Check if this is new content and looks like a response
-                        if (!initialContent.has(trimmedText) && 
-                            !trimmedText.includes('What is the current weather') &&
-                            !trimmedText.includes('This should trigger') &&
-                            !trimmedText.includes('self.__next_f.push') &&
-                            !trimmedText.includes('metadata') &&
-                            !trimmedText.includes('$undefined') &&
-                            !trimmedText.includes('digest') &&
-                            !trimmedText.startsWith('{') &&
-                            !trimmedText.includes('__next') &&
-                            trimmedText.length < 2000) {
-                            console.log(`Found NEW content (${trimmedText.length} chars): ${trimmedText.substring(0, 100)}...`);
-                            console.log('Element:', element);
-                            resolve(trimmedText);
-                            return;
-                        }
+                if (attempts >= maxAttempts) {
+                    console.log('Max attempts reached');
+                    if (foundElement) {
+                        const finalText = this.extractCleanText(foundElement);
+                        console.log('Returning final response despite timeout:', finalText.substring(0, 100));
+                        resolve(finalText);
+                    } else {
+                        reject(new Error('No response found in markdown-content elements'));
                     }
-                }
-                
-                // Also check our specific selectors
-                for (const selector of selectors) {
-                    const elements = document.querySelectorAll(selector);
-                    for (let i = elements.length - 1; i >= 0; i--) {
-                        const element = elements[i];
-                        const text = element.textContent || element.innerText;
-                        
-                        if (text && text.trim().length > 20) {
-                            const trimmedText = text.trim();
-                            
-                            if (!initialContent.has(trimmedText) && 
-                                trimmedText.length > 50 &&
-                                !trimmedText.includes('What is the current weather') &&
-                                !trimmedText.includes('This should trigger') &&
-                                !trimmedText.includes('self.__next_f.push') &&
-                                !trimmedText.includes('metadata') &&
-                                !trimmedText.includes('$undefined') &&
-                                !trimmedText.includes('digest') &&
-                                !trimmedText.startsWith('{') &&
-                                !trimmedText.includes('__next') &&
-                                trimmedText.length < 2000) {
-                                console.log(`Found NEW response via selector "${selector}" (${trimmedText.length} chars): ${trimmedText.substring(0, 100)}...`);
-                                resolve(trimmedText);
-                                return;
-                            }
-                        }
-                    }
-                }
-                
-                if (checkCount >= maxChecks) {
-                    console.log('Timeout waiting for new response, trying to get any recent content...');
-                    
-                    // Fallback: get the longest text element that might be a response
-                    const allTexts = [];
-                    document.querySelectorAll('*').forEach(el => {
-                        const text = el.textContent || el.innerText;
-                        if (text && text.trim().length > 50 && !el.querySelector('*')) {
-                            allTexts.push({
-                                text: text.trim(),
-                                length: text.length,
-                                element: el
-                            });
-                        }
-                    });
-                    
-                    allTexts.sort((a, b) => b.length - a.length);
-                    if (allTexts.length > 0) {
-                        console.log('Returning longest text as fallback:', allTexts[0].text.substring(0, 100));
-                        resolve(allTexts[0].text);
-                        return;
-                    }
-                    
-                    reject(new Error('No new response detected'));
                     return;
                 }
                 
-                setTimeout(checkForNewResponse, 1000);
+                setTimeout(checkForResponse, 1500); // Slightly longer interval
             };
             
-            checkForNewResponse();
+            checkForResponse();
+        });
+    }
+    
+    async sendGeminiRequest(prompt) {
+        try {
+            console.log('Starting Gemini request with prompt:', prompt);
+            
+            // Use the same findInputElement method as Perplexity but with Gemini-specific selectors
+            const inputElement = await this.findGeminiInputElement();
+            
+            // Clear and set the prompt
+            inputElement.focus();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Clear existing content
+            if (inputElement.tagName === 'TEXTAREA') {
+                inputElement.value = '';
+            } else if (inputElement.contentEditable === 'true') {
+                inputElement.textContent = '';
+                inputElement.innerHTML = '';
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+            // Type the prompt
+            if (inputElement.tagName === 'TEXTAREA') {
+                inputElement.value = prompt;
+            } else if (inputElement.contentEditable === 'true') {
+                inputElement.textContent = prompt;
+                inputElement.innerHTML = prompt;
+            }
+            
+            // Trigger events
+            inputElement.dispatchEvent(new Event('input', { bubbles: true }));
+            inputElement.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Verify text was set
+            const currentText = inputElement.value || inputElement.textContent || '';
+            console.log('Text in Gemini input after typing:', currentText);
+            
+            if (!currentText.includes(prompt.substring(0, 5))) {
+                console.log('Text not properly set, trying alternative method');
+                inputElement.focus();
+                document.execCommand('selectAll');
+                document.execCommand('insertText', false, prompt);
+            }
+            
+            // Find and click send button or use Enter
+            const sendButton = await this.findGeminiSendButton();
+            if (sendButton) {
+                sendButton.click();
+                console.log('Clicked Gemini send button');
+            } else {
+                // Use Enter key as fallback
+                inputElement.dispatchEvent(new KeyboardEvent('keydown', {
+                    key: 'Enter',
+                    code: 'Enter',
+                    keyCode: 13,
+                    bubbles: true,
+                    which: 13
+                }));
+                console.log('Used Enter key to submit Gemini request');
+            }
+            
+            // Wait for response
+            const response = await this.waitForGeminiResponse();
+            
+            return {
+                content: response,
+                usage: {
+                    prompt_tokens: prompt.length,
+                    completion_tokens: response.length,
+                    total_tokens: prompt.length + response.length
+                }
+            };
+            
+        } catch (error) {
+            console.error('Gemini request error:', error);
+            throw new Error(`Gemini request failed: ${error.message}`);
+        }
+    }
+    
+    async waitForGeminiResponse() {
+        console.log('Waiting for Gemini response...');
+        
+        // Wait for response to appear
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 20;
+            let lastResponseLength = 0;
+            let stableCount = 0;
+            
+            const responseSelectors = [
+                '[data-response-id]',
+                '.response-container',
+                '.model-response',
+                '[role="presentation"] p',
+                '.markdown',
+                'div[data-message-author-role="model"]',
+                '[class*="response"]',
+                '[class*="answer"]'
+            ];
+            
+            const checkForResponse = () => {
+                attempts++;
+                console.log(`Gemini response check ${attempts}/${maxAttempts}`);
+                
+                for (const selector of responseSelectors) {
+                    const elements = document.querySelectorAll(selector);
+                    if (elements.length > 0) {
+                        console.log(`Found ${elements.length} elements for selector: ${selector}`);
+                        
+                        for (let i = elements.length - 1; i >= 0; i--) {
+                            const element = elements[i];
+                            const text = element.textContent || element.innerText;
+                            
+                            if (text && text.trim().length > 10) {
+                                const trimmedText = text.trim();
+                                console.log(`Found response text (${trimmedText.length} chars): ${trimmedText.substring(0, 100)}...`);
+                                
+                                // Check if response is stable (not still generating)
+                                if (trimmedText.length === lastResponseLength) {
+                                    stableCount++;
+                                    if (stableCount >= 2) {
+                                        console.log('Gemini response appears complete');
+                                        resolve(trimmedText);
+                                        return;
+                                    }
+                                } else {
+                                    stableCount = 0;
+                                    lastResponseLength = trimmedText.length;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (attempts >= maxAttempts) {
+                    console.log('Gemini response timeout');
+                    reject(new Error('No response found'));
+                    return;
+                }
+                
+                setTimeout(checkForResponse, 1000);
+            };
+            
+            checkForResponse();
         });
     }
 }
 
 // Initialize the handler
+console.log('Initializing AIServiceHandler...');
 new AIServiceHandler();

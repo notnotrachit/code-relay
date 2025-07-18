@@ -138,6 +138,18 @@
     <button id="reconnectBtn" class="button">Reconnect to Server</button>
     
     <div class="test-section">
+        <div class="info-label">Page Access Check</div>
+        <button id="checkPageBtn" class="button">Check Current Page</button>
+        <div id="pageStatus" class="test-result" style="display: none;"></div>
+    </div>
+    
+    <div class="test-section">
+        <div class="info-label">Content Script Status</div>
+        <button id="injectScriptBtn" class="button">Inject Content Script</button>
+        <div id="scriptStatus" class="test-result" style="display: none;"></div>
+    </div>
+    
+    <div class="test-section">
         <div class="info-label">Test API</div>
         <input id="testInput" class="test-input" placeholder="Enter test message..." value="Hello, how are you?">
         <button id="testBtn" class="button">Send Test Request</button>

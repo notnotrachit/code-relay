@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "https://gemini.google.com/*",
@@ -22,10 +23,12 @@
     {
       "matches": [
         "https://gemini.google.com/*",
-        "https://www.perplexity.ai/*"
+        "https://www.perplexity.ai/*",
+        "https://perplexity.ai/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "action": {
@@ -34,8 +37,8 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["injected.js"],
-      "matches": ["https://gemini.google.com/*", "https://www.perplexity.ai/*"]
+      "resources": ["injected.js", "content.js"],
+      "matches": ["https://gemini.google.com/*", "https://www.perplexity.ai/*", "https://perplexity.ai/*"]
     }
   ]
 }

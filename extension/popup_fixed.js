@@ -61,12 +61,12 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Check if URL matches our patterns
             const supportedPatterns = [
-                'https://gemini.google.com',
-                'https://www.perplexity.ai',
-                'https://perplexity.ai'
+                'https://gemini.google.com/',
+                'https://www.perplexity.ai/',
+                'https://perplexity.ai/'
             ];
             
-            const isSupported = supportedPatterns.some(pattern => tab.url.startsWith(pattern));
+            const isSupported = supportedPatterns.some(pattern => tab.url.includes(pattern.replace('/', '')));
             
             if (isSupported) {
                 statusInfo += 'URL is supported\n';
@@ -107,11 +107,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 
             } else {
                 statusInfo += 'URL not supported\n';
-                statusInfo += 'Current URL: ' + tab.url + '\n';
                 statusInfo += 'Supported patterns:\n';
                 supportedPatterns.forEach(pattern => {
-                    statusInfo += '- ' + pattern + '/*\n';
-                    statusInfo += '  Matches: ' + (tab.url.startsWith(pattern) ? 'YES' : 'NO') + '\n';
+                    statusInfo += '- ' + pattern + '\n';
                 });
                 showResult(pageStatus, statusInfo, 'error');
             }
@@ -132,109 +130,29 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
             
-            // Try multiple injection methods
-            let injectionSuccess = false;
-            let errorMessage = '';
+            // Simple injection approach
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: ['content.js']
+            });
             
-            // Method 1: Direct file injection
-            try {
-                await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    files: ['content.js']
-                });
-                injectionSuccess = true;
-                showResult(scriptStatus, 'Method 1: File injection attempted...', 'info');
-            } catch (error1) {
-                errorMessage += 'Method 1 failed: ' + error1.message + '\n';
-                
-                // Method 2: Inline script injection
-                try {
-                    const contentScriptCode = `
-                        // Content script for AI Proxy Extension
-                        class AIServiceHandler {
-                            constructor() {
-                                this.isReady = false;
-                                this.currentService = this.detectService();
-                                this.setupMessageListener();
-                                this.waitForPageReady();
-                                console.log('AI Service Handler initialized via manual injection');
-                            }
-                            
-                            detectService() {
-                                const hostname = window.location.hostname;
-                                if (hostname.includes('perplexity.ai')) {
-                                    return 'perplexity';
-                                }
-                                return 'unknown';
-                            }
-                            
-                            setupMessageListener() {
-                                chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-                                    if (message.type === 'AI_REQUEST') {
-                                        console.log('Received AI request:', message);
-                                        sendResponse({ content: 'Manual injection test response' });
-                                        return true;
-                                    }
-                                });
-                            }
-                            
-                            async waitForPageReady() {
-                                this.isReady = true;
-                                console.log('Perplexity service ready via manual injection');
-                            }
-                        }
-                        
-                        // Initialize the handler
-                        if (!window.aiServiceHandler) {
-                            window.aiServiceHandler = new AIServiceHandler();
-                        }
-                        
-                        // Make AIServiceHandler available globally for detection
-                        window.AIServiceHandler = AIServiceHandler;
-                        
-                        console.log('Content script manually injected successfully');
-                    `;
-                    
-                    await chrome.scripting.executeScript({
-                        target: { tabId: tab.id },
-                        func: (code) => {
-                            eval(code);
-                            return 'Inline injection successful';
-                        },
-                        args: [contentScriptCode]
-                    });
-                    
-                    injectionSuccess = true;
-                    showResult(scriptStatus, 'Method 2: Inline injection attempted...', 'info');
-                } catch (error2) {
-                    errorMessage += 'Method 2 failed: ' + error2.message + '\n';
-                }
-            }
-            
-            // Wait and check if injection worked
+            // Wait a moment then check if it worked
             setTimeout(async () => {
                 try {
                     const results = await chrome.scripting.executeScript({
                         target: { tabId: tab.id },
-                        func: () => {
-                            return {
-                                hasAIServiceHandler: typeof AIServiceHandler !== 'undefined',
-                                hasHandler: !!window.aiServiceHandler,
-                                consoleMessages: 'Check console for injection messages'
-                            };
-                        }
+                        func: () => typeof AIServiceHandler !== 'undefined'
                     });
                     
-                    const result = results[0].result;
-                    if (result.hasAIServiceHandler || result.hasHandler) {
-                        showResult(scriptStatus, 'Content script injected successfully!\nCheck browser console for confirmation messages.', 'success');
-                    } else {
-                        showResult(scriptStatus, 'Injection failed:\n' + errorMessage + '\nTry refreshing the page and reloading the extension.', 'error');
-                    }
+                    const isLoaded = results[0].result;
+                    showResult(scriptStatus, 
+                        isLoaded ? 'Content script injected successfully!' : 'Content script injection failed',
+                        isLoaded ? 'success' : 'error'
+                    );
                 } catch (error) {
-                    showResult(scriptStatus, 'Error checking injection: ' + error.message + '\n' + errorMessage, 'error');
+                    showResult(scriptStatus, 'Error checking injection: ' + error.message, 'error');
                 }
-            }, 1500);
+            }, 1000);
             
         } catch (error) {
             showResult(scriptStatus, 'Injection failed: ' + error.message, 'error');
